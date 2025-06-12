@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { marked } from "marked";
+import { FiTrash } from "react-icons/fi";
+
 
 // Gemini API setup
 const GEMINI_API_KEY = "AIzaSyCRAzRDm37YRwJgO2xJcGv1jfYtmTcTfEw";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-2.0-flash";
 
-// Set temperature in code only
 const temperature = 0.7;
 
 function ChatApp() {
@@ -20,6 +21,8 @@ function ChatApp() {
   const [activeConvId, setActiveConvId] = useState(1);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState(null); // 💡 Track which conv to delete
+  const [showModal, setShowModal] = useState(false);
 
   const activeConversation = conversations.find(c => c.id === activeConvId);
 
@@ -93,7 +96,25 @@ function ChatApp() {
 
   const updateConversationMessages = (convId, messages) => {
     setConversations(prev =>
-      prev.map(c => (c.id === convId ? { ...c, messages } : c))
+      prev.map(c => {
+        if (c.id === convId) {
+          const defaultTitle = "New Conversation";
+          let newTitle = c.title;
+
+          if (c.title === defaultTitle) {
+            const firstUserMsg = messages.find(m => m.sender === "user");
+            if (firstUserMsg) {
+              newTitle =
+                firstUserMsg.text.length > 30
+                  ? firstUserMsg.text.slice(0, 30) + "..."
+                  : firstUserMsg.text;
+            }
+          }
+
+          return { ...c, messages, title: newTitle };
+        }
+        return c;
+      })
     );
   };
 
@@ -106,6 +127,25 @@ function ChatApp() {
     setActiveConvId(newId);
   };
 
+  // Called after confirmation
+  const confirmDelete = () => {
+    const updatedConversations = conversations.filter(c => c.id !== deleteTargetId);
+    setConversations(updatedConversations);
+
+    if (deleteTargetId === activeConvId) {
+      if (updatedConversations.length > 0) {
+        setActiveConvId(updatedConversations[0].id);
+      } else {
+        const newConv = { id: 1, title: "New Conversation", messages: [] };
+        setConversations([newConv]);
+        setActiveConvId(1);
+      }
+    }
+
+    setShowModal(false);
+    setDeleteTargetId(null);
+  };
+
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "Arial, sans-serif" }}>
       {/* Sidebar */}
@@ -114,8 +154,10 @@ function ChatApp() {
         {conversations.map(conv => (
           <div
             key={conv.id}
-            onClick={() => setActiveConvId(conv.id)}
             style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
               padding: "8px 12px",
               marginBottom: 8,
               cursor: "pointer",
@@ -123,7 +165,36 @@ function ChatApp() {
               borderRadius: 4
             }}
           >
-            {conv.title}
+            <div
+              onClick={() => setActiveConvId(conv.id)}
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+                textOverflow: "ellipsis"
+              }}
+              title={conv.title}
+            >
+              {conv.title}
+            </div>
+
+              
+            <button
+              onClick={() => {
+              setDeleteTargetId(conv.id);
+              setShowModal(true);
+              }}
+              style={{
+              marginLeft: 8,
+              backgroundColor: "transparent",
+              border: "none",
+              cursor: "pointer",
+              }}
+              title="Delete conversation"
+              >
+              <FiTrash color="red" size={18} />
+            </button>
+
           </div>
         ))}
         <button onClick={createNewConversation}>+ New Conversation</button>
@@ -184,6 +255,66 @@ function ChatApp() {
           </button>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            height: "100vh",
+            width: "100vw",
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center"
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              padding: 20,
+              borderRadius: 8,
+              width: 300,
+              boxShadow: "0 4px 10px rgba(0,0,0,0.3)",
+              textAlign: "center"
+            }}
+          >
+            <h4>Confirm Deletion</h4>
+            <p>Do you really want to delete this conversation?</p>
+            <div style={{ marginTop: 20 }}>
+              <button
+                onClick={confirmDelete}
+                style={{
+                  backgroundColor: "#d9534f",
+                  color: "white",
+                  padding: "8px 12px",
+                  marginRight: 10,
+                  border: "none",
+                  borderRadius: 4
+                }}
+              >
+                Yes, Delete
+              </button>
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setDeleteTargetId(null);
+                }}
+                style={{
+                  backgroundColor: "#ccc",
+                  padding: "8px 12px",
+                  border: "none",
+                  borderRadius: 4
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
