@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "marked": "^15.0.12",
+    "react-markdown": "^10.1.0"
+  }
+}
