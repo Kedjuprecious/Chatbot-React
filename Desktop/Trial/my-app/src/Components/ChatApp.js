@@ -2,27 +2,35 @@ import React, { useState, useEffect } from "react";
 import { marked } from "marked";
 import { FiTrash } from "react-icons/fi";
 
-
-// Gemini API setup
 const GEMINI_API_KEY = "AIzaSyCRAzRDm37YRwJgO2xJcGv1jfYtmTcTfEw";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-2.0-flash";
-
 const temperature = 0.7;
+
+const systemInstruction = `
+You are a cardiologist AI expert. Your role is to:
+- Ask 6 follow-up questions to understand user symptoms related to cardiovascular disease, one at a time, based on previous answers.
+- Based on answers, recommend first-line medical care (like medications or lifestyle advice).
+- Suggest necessary diagnostic tests (e.g., ECG, echocardiogram) where applicable.
+- If symptoms suggest emergency (like crushing chest pain, syncope, severe shortness of breath), advise urgent cardiologist consultation.
+- After the questions and recommendation, summarize the session.
+- Then, ask the user if they want to speak to a cardiologist on the platform.
+Please act like a compassionate, experienced medical doctor.
+`;
 
 function ChatApp() {
   const [conversations, setConversations] = useState(() => {
     const saved = localStorage.getItem("conversations");
-    return saved
-      ? JSON.parse(saved)
-      : [{ id: 1, title: "New Conversation", messages: [] }];
+    return saved ? JSON.parse(saved) : [{ id: 1, title: "New Conversation", messages: [] }];
   });
 
   const [activeConvId, setActiveConvId] = useState(1);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [deleteTargetId, setDeleteTargetId] = useState(null); // 💡 Track which conv to delete
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [questionCount, setQuestionCount] = useState(0);
+  const maxQuestions = 6;
 
   const activeConversation = conversations.find(c => c.id === activeConvId);
 
@@ -33,19 +41,18 @@ function ChatApp() {
   const sendMessage = async () => {
     if (!input.trim()) return;
 
-    const updatedMessages = [
-      ...activeConversation.messages,
-      { sender: "user", text: input }
-    ];
+    const updatedMessages = [...activeConversation.messages, { sender: "user", text: input }];
     updateConversationMessages(activeConvId, updatedMessages);
-
     setInput("");
     setLoading(true);
 
-    const chatHistory = updatedMessages.map(msg => ({
-      role: msg.sender === "user" ? "user" : "model",
-      parts: [{ text: msg.text }]
-    }));
+    const chatHistory = [
+      { role: "user", parts: [{ text: systemInstruction.trim() }] },
+      ...updatedMessages.map(msg => ({
+        role: msg.sender === "user" ? "user" : "model",
+        parts: [{ text: msg.text }]
+      }))
+    ];
 
     const payload = {
       contents: chatHistory,
@@ -68,21 +75,22 @@ function ChatApp() {
     try {
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
 
       const data = await response.json();
       const generatedText =
-        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "No response from Gemini";
+        data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response from Gemini";
 
       updateConversationMessages(activeConvId, [
         ...updatedMessages,
         { sender: "ai", text: generatedText }
       ]);
+
+      if (questionCount < maxQuestions) {
+        setQuestionCount(prev => prev + 1);
+      }
     } catch (error) {
       updateConversationMessages(activeConvId, [
         ...updatedMessages,
@@ -119,15 +127,13 @@ function ChatApp() {
   };
 
   const createNewConversation = () => {
-    const newId = conversations.length
-      ? Math.max(...conversations.map(c => c.id)) + 1
-      : 1;
+    const newId = conversations.length ? Math.max(...conversations.map(c => c.id)) + 1 : 1;
     const newConv = { id: newId, title: "New Conversation", messages: [] };
     setConversations([...conversations, newConv]);
     setActiveConvId(newId);
+    setQuestionCount(0);
   };
 
-  // Called after confirmation
   const confirmDelete = () => {
     const updatedConversations = conversations.filter(c => c.id !== deleteTargetId);
     setConversations(updatedConversations);
@@ -139,6 +145,7 @@ function ChatApp() {
         const newConv = { id: 1, title: "New Conversation", messages: [] };
         setConversations([newConv]);
         setActiveConvId(1);
+        setQuestionCount(0);
       }
     }
 
@@ -167,34 +174,21 @@ function ChatApp() {
           >
             <div
               onClick={() => setActiveConvId(conv.id)}
-              style={{
-                flex: 1,
-                overflow: "hidden",
-                whiteSpace: "nowrap",
-                textOverflow: "ellipsis"
-              }}
+              style={{ flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}
               title={conv.title}
             >
               {conv.title}
             </div>
-
-              
             <button
               onClick={() => {
-              setDeleteTargetId(conv.id);
-              setShowModal(true);
+                setDeleteTargetId(conv.id);
+                setShowModal(true);
               }}
-              style={{
-              marginLeft: 8,
-              backgroundColor: "transparent",
-              border: "none",
-              cursor: "pointer",
-              }}
+              style={{ marginLeft: 8, backgroundColor: "transparent", border: "none", cursor: "pointer" }}
               title="Delete conversation"
-              >
+            >
               <FiTrash color="red" size={18} />
             </button>
-
           </div>
         ))}
         <button onClick={createNewConversation}>+ New Conversation</button>
@@ -209,10 +203,7 @@ function ChatApp() {
           {activeConversation?.messages.map((msg, idx) => (
             <div
               key={idx}
-              style={{
-                marginBottom: 12,
-                textAlign: msg.sender === "user" ? "right" : "left"
-              }}
+              style={{ marginBottom: 12, textAlign: msg.sender === "user" ? "right" : "left" }}
             >
               <div
                 style={{
